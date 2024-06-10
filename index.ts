@@ -1,27 +1,16 @@
 type Graph = Map<number, Node>;
 
 interface INode {
-    // Globally unique ID of a node
     id: number;
-    // Any string
     title: string;
-    // Any string
     description: string | null;
-    // The parent node
     parent: Node | null;
-    // The sibilings of this node
     siblings: Graph | null;
-    // Add a new node(s) as children for of this node
-    // add(nodes: Node[]): Node[];
-    // Find a child of this node, 1 level deep
+    add(nodes: Node[]): Node[];
     find(id: number): Node | null;
-    // Get all children nodes, 1 level deep
     list(): Graph | null;
-
     deep: {
-        // Find ANY node within this nodes tree
         find(id: number): Node | null;
-        // List ALL nodes within this nodes tree
         list(): Graph | null;
     };
 }
@@ -34,43 +23,40 @@ class Node implements INode {
     description: string | null;
     parent: Node | null;
     siblings: Graph | null;
-    #children: Graph | null;
+    #children: Graph | null = null;
 
     constructor(title: string, parent?: Node) {
         this.id = Node.counter++;
         this.title = title;
         this.description = null;
-
         this.#children = null;
+        this.siblings = null;
 
         if (parent) {
             this.parent = parent;
             parent.add([this]);
-            this.siblings = new Map(parent.#children);
-            this.siblings.delete(this.id);
         } else {
             this.parent = null;
-            this.siblings = null;
         }
     }
 
-    private add(nodes: Node[]) {
+    add(nodes: Node[]) {
+        if (!this.#children) {
+            this.#children = new Map<number, Node>();
+        }
         for (const node of nodes) {
-            if (!this.#children?.has(node.id)) {
-                const newNode = new Node(node.title); // Create a new node without passing 'this' as parent
-                newNode.parent = this; // Assign the current node as the parent
-                if (!this.#children) {
-                    this.#children = new Map<number, Node>();
-                }
-                this.#children.set(newNode.id, newNode);
+            if (!this.#children.has(node.id)) {
+                this.#children.set(node.id, node);
+                node.parent = this;
+            } else {
+                throw new Error("Node exists");
             }
         }
         return nodes;
     }
 
     find(id: number) {
-        if (!this.#children) return null;
-        return this.#children.get(id) || null;
+        return this.#children?.get(id) || null;
     }
 
     list() {
@@ -79,47 +65,48 @@ class Node implements INode {
 
     deep = {
         find: (id: number): Node | null => {
-            // Start searching from this node
             let foundNode = this.find(id);
             if (foundNode) return foundNode;
 
-            // Recursively search children of this node
             for (const child of this.getChildren()) {
                 foundNode = child.deep.find(id);
                 if (foundNode) return foundNode;
             }
 
-            return null; // Return null if node is not found
+            return null;
         },
         list: (): Graph | null => {
-            // Initialize the result map
             const result: Graph = new Map();
-
-            // Add children of this node to the result map
-            for (const child of this.getChildren()) {
-                result.set(child.id, child);
-            }
-
-            // Recursively add children of children to the result map
-            for (const child of this.getChildren()) {
-                const grandchildren = child.deep.list();
-                if (grandchildren) {
-                    for (const grandchild of grandchildren.values()) {
-                        result.set(grandchild.id, grandchild);
-                    }
-                }
-            }
-
-            return result.size > 0 ? result : null; // Return null if no children found
+            this.collectNodes(result);
+            return result.size > 0 ? result : null;
         },
     };
+
+    private collectNodes(result: Graph) {
+        if (!this.#children) return;
+
+        for (const [i, child] of this.#children) {
+            result.set(i, child);
+            child.collectNodes(result);
+        }
+    }
 
     private getChildren(): Node[] {
         return this.#children ? Array.from(this.#children.values()) : [];
     }
 }
 
-const a = new Node("Top level node");
-const b = new Node("B: second level node", a);
-const c = new Node("C: second level node", a);
-const d = new Node("D: third level node", c);
+const a = new Node("Top level node"); // 1
+const b = new Node("B: second level node", a); // 2
+const c = new Node("C: second level node", a); // 3
+const d = new Node("D: third level node", c); // 4
+const e = new Node("E: third level node", c); // 5
+const f = new Node("F: third level node", c); // 6
+const g = new Node("G: third level node", c); // 7
+const h = new Node("H: third level node", c); // 8
+const i = new Node("I: third level node", b); // 9
+
+console.log(a.list()?.size); // Expect 3 (a, b, i)
+console.log(a.deep.list()?.size); // Expect 8 (a, b, c, d, e, f, g, h, i)
+console.log(a.deep.find(6)); // Expect null
+console.log(a.deep.find(6)); // Expect F
